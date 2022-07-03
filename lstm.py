@@ -121,8 +121,8 @@ min_value = np.min(dataset,axis=0)
 scalar = max_value - min_value
 dataset = list((map(lambda x: x / scalar, dataset)))
 
-
-def create_dataset(dataset, look_back=4):
+#device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def create_dataset(dataset, look_back=20):
     dataX, dataY = [], []
     for i in range(len(dataset) - look_back):
         a = dataset[i:(i + look_back)]
@@ -139,11 +139,11 @@ val_Y=data_Y[1000:1200]
 test_X = data_X[1200:]
 test_Y = data_Y[1200:]
 
-train_X = train_X.reshape(-1, 433, 4)
+train_X = train_X.reshape(-1, 433, 20)
 train_Y = train_Y.reshape(-1, 433, 1)
-test_X = test_X.reshape(-1, 433, 4)
+test_X = test_X.reshape(-1, 433, 20)
 test_Y=test_Y.reshape(-1,433,1)
-val_X = val_X.reshape(-1, 433, 4)
+val_X = val_X.reshape(-1, 433, 20)
 val_Y = val_Y.reshape(-1, 433, 1)
 
 train_x = torch.from_numpy(train_X)
@@ -169,9 +169,18 @@ class lstm_reg(nn.Module):
         x = x.view(s, b, -1)
         return x
 
-net = lstm_reg(4,4)
+net = lstm_reg(20,20)
 
 criterion = nn.MSELoss()
+def Cor_Loss_func(X,Y):
+    the_coef=torch.corrcoef(torch.cat([X.reshape([1,-1]),Y.reshape([1,-1])]))[0,1]
+    return -the_coef
+def Cor_Loss(X,Y):
+    cor=[]
+    for i in range(X.shape[0]):
+        cor.append(Cor_Loss_func(X[i,:],Y[i,:]).detach().numpy())
+    return torch.tensor(np.mean(cor),requires_grad=True)
+
 optimizer = torch.optim.Adam(net.parameters(), lr=1e-2)
 
 # 开始训练
@@ -187,14 +196,17 @@ for e in range(100):
     out = net(var_x)
     val_out=net(valx)
     loss = criterion(out, var_y)
+    cor=Cor_Loss(out, train_y)
     v_loss=criterion(val_out, valy)
+    V_cor=Cor_Loss(val_out, val_y)
     tr_loss.append(loss)
     val_loss.append(v_loss)
     # 反向传播
     optimizer.zero_grad()
     loss.backward()
+    #cor.backward()
     optimizer.step()
-    print('Epoch: {}, Loss: {:.5f},val_Loss: {:.5f}'.format(e + 1, loss.data,v_loss))
+    print('Epoch: {}, Loss: {:.5f},val_Loss: {:.5f},cor:{},v_cor:{}'.format(e + 1, loss.data,v_loss,cor,V_cor))
 
 net = net.eval() # 转换成测试模式
 
@@ -202,9 +214,10 @@ test_data = Variable(test_x)
 test_tar = Variable(test_y)
 pred_test = net(test_x) # 测试集的预测结果
 test_loss=criterion(pred_test,test_tar)
-print('ave_val_Loss: {:.5f},test_loss:{:.5f}'.format(sum(val_loss)/len(val_loss),test_loss) )
+t_cor=Cor_Loss(pred_test,test_y)
+print('ave_val_Loss: {:.5f},test_loss:{:.5f},t_cor:{}'.format(sum(val_loss)/len(val_loss),test_loss,t_cor) )
 # 改变输出的格式
 pred_test = pred_test.view(-1).data.numpy()
-a=np.zeros(4)
+a=np.zeros(20)
 pre=np.r_[a,pred_test]
 
