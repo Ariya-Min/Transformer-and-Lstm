@@ -1,50 +1,7 @@
-"""
-Language Modeling with nn.Transformer and TorchText
-===============================================================
-This is a tutorial on training a sequence-to-sequence model that uses the
-`nn.Transformer <https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html>`__ module.
-The PyTorch 1.2 release includes a standard transformer module based on the
-paper `Attention is All You Need <https://arxiv.org/pdf/1706.03762.pdf>`__.
-Compared to Recurrent Neural Networks (RNNs), the transformer model has proven
-to be superior in quality for many sequence-to-sequence tasks while being more
-parallelizable. The ``nn.Transformer`` module relies entirely on an attention
-mechanism (implemented as
-`nn.MultiheadAttention <https://pytorch.org/docs/stable/generated/torch.nn.MultiheadAttention.html>`__)
-to draw global dependencies between input and output. The ``nn.Transformer``
-module is highly modularized such that a single component (e.g.,
-`nn.TransformerEncoder <https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoder.html>`__)
-can be easily adapted/composed.
-.. image:: ../_static/img/transformer_architecture.jpg
-"""
-
-######################################################################
-# Define the model
-# ----------------
-#
-
-
-######################################################################
-# In this tutorial, we train a ``nn.TransformerEncoder`` model on a
-# language modeling task. The language modeling task is to assign a
-# probability for the likelihood of a given word (or a sequence of words)
-# to follow a sequence of words. A sequence of tokens are passed to the embedding
-# layer first, followed by a positional encoding layer to account for the order
-# of the word (see the next paragraph for more details). The
-# ``nn.TransformerEncoder`` consists of multiple layers of
-# `nn.TransformerEncoderLayer <https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html>`__.
-# Along with the input sequence, a square attention mask is required because the
-# self-attention layers in ``nn.TransformerEncoder`` are only allowed to attend
-# the earlier positions in the sequence. For the language modeling task, any
-# tokens on the future positions should be masked. To produce a probability
-# distribution over output words, the output of the ``nn.TransformerEncoder``
-# model is passed through a linear layer followed by a log-softmax function.
-#
-
 import math
 from typing import Tuple
 import pandas as pd
 import numpy as np
-
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
@@ -104,13 +61,7 @@ class NeuralNet(torch.nn.Module):
             out = self.relu(out)
             out = self.fc2(out)
             return out
-######################################################################
-# ``PositionalEncoding`` module injects some information about the
-# relative or absolute position of the tokens in the sequence. The
-# positional encodings have the same dimension as the embeddings so that
-# the two can be summed. Here, we use ``sine`` and ``cosine`` functions of
-# different frequencies.
-#
+
 
 class PositionalEncoding(nn.Module):
 
@@ -150,52 +101,27 @@ def batchify(data: Tensor, bsz: int) -> Tensor:
     data = data.view(bsz, seq_len).t().contiguous()
     return data.to(device)
 
-#batch_size = 4
-#eval_batch_size =4
-
+def standardization(data):
+    mu = np.mean(data, axis=0)
+    sigma = np.std(data, axis=0)
+    return (data - mu) / sigma
 data_csv=pd.read_csv("industry_ret_data_1500.csv")
 dataset = data_csv.values
 dataset=np.delete(dataset,0,axis=1)
 dataset = dataset.astype('float32')
-max_value = np.max(dataset,axis=0)
-min_value = np.min(dataset,axis=0)
-scalar = max_value - min_value
-dataset = list((map(lambda x: x / scalar, dataset)))
+dataset=standardization(dataset)
 vari=[]
-for i in range(433):
-    svar=np.var(np.array(dataset)[:,i])
-    print(i,svar)
-    vari.append(svar)
-print(np.mean(vari))
+# for i in range(433):
+#     svar=np.var(np.array(dataset)[1000:1200,i])
+#     print(i,svar)
+#     vari.append(svar)
+# print(np.mean(vari))
 train_data = torch.from_numpy(np.array(dataset[:1000]))
 val_data = torch.from_numpy(np.array(dataset[1000:1200]))
 test_data = torch.from_numpy(np.array(dataset[1200:]))
-#train_data = batchify(train_data[:,0], batch_size)  # shape [seq_len, batch_size]
-#val_data = batchify(val_data[:,0], eval_batch_size)
-#test_data = batchify(test_data[:,0], eval_batch_size)
 
 
-######################################################################
-# Functions to generate input and target sequence
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-
-
-######################################################################
-# ``get_batch()`` generates a pair of input-target sequences for
-# the transformer model. It subdivides the source data into chunks of
-# length ``bptt``. For the language modeling task, the model needs the
-# following words as ``Target``. For example, with a ``bptt`` value of 2,
-# we’d get the following two Variables for ``i`` = 0:
-#
-# .. image:: ../_static/img/transformer_input_target.png
-#
-# It should be noted that the chunks are along dimension 0, consistent
-# with the ``S`` dimension in the Transformer model. The batch dimension
-# ``N`` is along dimension 1.
-#
-
-bptt = 42
+bptt =24
 def get_batch(source: Tensor, i: int) -> Tuple[Tensor, Tensor]:
     """
     Args:
@@ -211,49 +137,33 @@ def get_batch(source: Tensor, i: int) -> Tuple[Tensor, Tensor]:
     return data, target
 
 
-######################################################################
-# Initiate an instance
-# --------------------
-#
-
-
-######################################################################
-# The model hyperparameters are defined below. The vocab size is
-# equal to the length of the vocab object.
-#
-
 
 ntokens = 1  # size of feature dimentional
-emsize = 4  # embedding dimension
-d_hid = 4  # dimension of the feedforward network model in nn.TransformerEncoder
-nlayers = 4  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-nhead = 4  # number of heads in nn.MultiheadAttention
+emsize = 256  # embedding dimension
+d_hid = 256  # dimension of the feedforward network model in nn.TransformerEncoder
+nlayers = 8  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+nhead = 8  # number of heads in nn.MultiheadAttention
 dropout = 0.2  # dropout probability
 model = TransformerModel(ntokens, emsize, nhead, d_hid, nlayers, dropout).to(device)
 
-
-######################################################################
-# Run the model
-# -------------
-#
-
-
-######################################################################
-# We use `CrossEntropyLoss <https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html>`__
-# with the `SGD <https://pytorch.org/docs/stable/generated/torch.optim.SGD.html>`__
-# (stochastic gradient descent) optimizer. The learning rate is initially set to
-# 5.0 and follows a `StepLR <https://pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.StepLR.html>`__
-# schedule. During training, we use `nn.utils.clip_grad_norm\_ <https://pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_norm_.html>`__
-# to prevent gradients from exploding.
-#
 
 import copy
 import time
 
 criterion = torch.nn.MSELoss()
-lr = 5.0  # learning rate
+lr = 0.01  # learning rate
 optimizer = torch.optim.SGD(model.parameters(), lr=lr)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
+
+def Cor_Loss_func(X,Y):
+    the_coef=torch.corrcoef(torch.cat([X.reshape([1,-1]),Y.reshape([1,-1])]))[0,1]
+    return -the_coef
+def Cor_Loss(X,Y):
+    cor=[]
+    for i in range(X.shape[0]):
+        cor.append(Cor_Loss_func(X[i,:],Y[i,:]).detach().numpy())
+    return torch.tensor(np.mean(cor),requires_grad=True)
+
 
 def train(model: nn.Module) -> None:
     model.train()  # turn on train mode
@@ -265,13 +175,16 @@ def train(model: nn.Module) -> None:
     num_batches = len(train_data) // bptt
     for batch, i in enumerate(range(0, train_data.size(0) - 1, bptt)):
         data, targets = get_batch(train_data, i)
+        #print(data,torch.reshape(targets.cpu(), data.size()))
         batch_size = data.size(0)
         if batch_size != bptt:  # only on last batch
             src_mask = src_mask[:batch_size, :batch_size]
         loss_function = torch.nn.MSELoss()  # 正确
         output = model(data, src_mask)
         output = torch.mean(output, 2)
+
         loss = loss_function(torch.reshape(output.cuda(), targets.size()), targets.cuda())
+        cor=Cor_Loss(output.cpu(), torch.reshape(targets.cpu(), output.size()))
 
         optimizer.zero_grad()
         loss.backward()
@@ -286,11 +199,11 @@ def train(model: nn.Module) -> None:
             ppl = math.exp(cur_loss)
             print(f'| epoch {epoch:3d} | {batch:5d}/{num_batches:5d} batches | '
                   f'lr {lr:02.2f} | ms/batch {ms_per_batch:5.2f} | '
-                  f'loss {cur_loss:5.2f} | ppl {ppl:8.2f}')
+                  f'loss {cur_loss:5.2f} | ppl {ppl:8.2f} | 'f'cor {cor:.5f}')
             total_loss = 0
             start_time = time.time()
 
-def evaluate(model: nn.Module, eval_data: Tensor) -> float:
+def evaluate(model: nn.Module, eval_data: Tensor) :
     model.eval()  # turn on evaluation mode
     total_loss = 0.
     src_mask = generate_square_subsequent_mask(bptt).to(device)
@@ -301,29 +214,29 @@ def evaluate(model: nn.Module, eval_data: Tensor) -> float:
             if batch_size != bptt:
                 src_mask = src_mask[:batch_size, :batch_size]
             output = model(data, src_mask)
-            output_flat = output.view(-1, ntokens)
-            loss_function = torch.nn.MSELoss()  # 正确
-            output = torch.mean(output, 2)
-            total_loss += batch_size * loss_function(output_flat.cuda(), targets.cuda()).item()
-    return total_loss / (len(eval_data) - 1)
+            output_flat = output.view(ntokens, -1)[0]
 
-######################################################################
-# Loop over epochs. Save the model if the validation loss is the best
-# we've seen so far. Adjust the learning rate after each epoch.
+            loss_function = torch.nn.MSELoss()  # 正确
+            output1 = torch.mean(output, 2)
+            v_cor=Cor_Loss(output.cpu(), torch.reshape(targets.cpu(),output.size()))
+            total_loss += batch_size * loss_function(output_flat.cuda(), targets.cuda()).item()
+            #print(targets,output_flat)
+
+    return total_loss / (len(eval_data) - 1),v_cor
 
 best_val_loss = float('inf')
-epochs = 100
+epochs = 10
 best_model = None
 
 for epoch in range(1, epochs + 1):
     epoch_start_time = time.time()
     train(model)
-    val_loss = evaluate(model, val_data)
+    val_loss,v_cor = evaluate(model, val_data)
     val_ppl = math.exp(val_loss)
     elapsed = time.time() - epoch_start_time
     print('-' * 89)
     print(f'| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | '
-          f'valid loss {val_loss:.5f} | valid ppl {val_ppl:8.2f}')
+          f'valid loss {val_loss:.5f} | valid ppl {val_ppl:8.2f}| 'f'V_cor {v_cor:.5f}')
     print('-' * 89)
 
     if val_loss < best_val_loss:
@@ -333,14 +246,9 @@ for epoch in range(1, epochs + 1):
     scheduler.step()
 
 
-######################################################################
-# Evaluate the best model on the test dataset
-# -------------------------------------------
-#
-
-test_loss = evaluate(best_model, test_data)
+test_loss,t_cor= evaluate(best_model, test_data)
 test_ppl = math.exp(test_loss)
 print('=' * 89)
 print(f'| End of training | test loss {test_loss:.5f} | '
-      f'test ppl {test_ppl:.5f}')
+      f'test ppl {test_ppl:.5f}|'f'test cor {t_cor:.5f}')
 print('=' * 89)
